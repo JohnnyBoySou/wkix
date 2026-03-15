@@ -7,6 +7,11 @@ on:
       - "[0-9]*"
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 0.0.1)"
+        required: true
 
 jobs:
   build:
@@ -72,10 +77,14 @@ jobs:
         with:
           path: artifacts/
 
-      - name: Set version from tag
+      - name: Set version
         run: |
-          TAG=${GITHUB_REF_NAME:-${GITHUB_REF#refs/tags/}}
-          VERSION=${TAG#v}
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            TAG=${GITHUB_REF_NAME:-${GITHUB_REF#refs/tags/}}
+            VERSION=${TAG#v}
+          fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           npm version "$VERSION" --no-git-tag-version
 
