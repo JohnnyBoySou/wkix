@@ -97,7 +97,7 @@ This repository has a pre-generated codebase index in \`.workspace/\`.
 | \`.workspace/test_map.json\` | Source file → test file mapping | Find tests for a module |
 | \`.workspace/call_graph.json\` | Per-symbol list of called function names — extracted from AST | Trace execution flow without reading code |
 | \`.workspace/type_hierarchy.json\` | Classes/interfaces with their extends and implements — full inheritance tree | Understand type relationships instantly |
-| \`.workspace/env_vars.json\` | All `process.env.X` usages with file and line — unique var list + full usage list | Know all config variables at a glance |
+| \`.workspace/env_vars.json\` | All \`process.env.X\` usages with file and line — unique var list + full usage list | Know all config variables at a glance |
 | \`.workspace/complexity.json\` | Per-function McCabe complexity, branch count, line count | Find complex/risky functions before editing |
 | \`.workspace/dead_code.json\` | Exported symbols never imported + files with no importers | Identify unused code safely |
 | \`.workspace/api_surface.json\` | All exported symbols with signatures and doc — the public API | Understand module interfaces without reading implementation |
