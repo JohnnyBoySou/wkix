@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runLint } from "./oxlint.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(__dirname, "..");
@@ -93,6 +94,7 @@ This repository has a pre-generated codebase index in \`.workspace/\`.
 | \`.workspace/repo_docs.json\` | README and documentation content | Project overview |
 | \`.workspace/project_metadata.json\` | Package name, scripts, dependency counts | Project configuration |
 | \`.workspace/test_map.json\` | Source file → test file mapping | Find tests for a module |
+| \`.workspace/lint.json\` | Oxlint diagnostics grouped by file — errors, warnings, rule names and line numbers | Find lint errors without running the linter |
 
 **Current stats:** ${stats.fileCount} files · ${stats.symbolCount} symbols · ${stats.todoCount} TODOs
 
@@ -150,21 +152,34 @@ function writeAgentInstructions(targetDir, quiet) {
 
 function main() {
   const argv = process.argv.slice(2);
-  let force   = false;
-  let quiet   = false;
+  let force    = false;
+  let quiet    = false;
   let noInject = false;
   let repoRoot = null;
+  let subcommand = null;
 
   for (const arg of argv) {
-    if (arg === "--force")     force = true;
-    else if (arg === "--quiet")    quiet = true;
+    if (arg === "--force")      force = true;
+    else if (arg === "--quiet")     quiet = true;
     else if (arg === "--no-inject") noInject = true;
-    else if (arg === "generate")   continue; // subcomando
+    else if (arg === "generate")    subcommand = "generate";
+    else if (arg === "lint")        subcommand = "lint";
     else if (!arg.startsWith("--")) repoRoot = arg;
   }
 
   const targetDir = repoRoot ? path.resolve(process.cwd(), repoRoot) : process.cwd();
 
+  if (subcommand === "lint") {
+    try {
+      process.exitCode = runLint(targetDir, { quiet });
+    } catch (err) {
+      console.error(`wkix lint: ${err.message}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  // default: generate (index)
   const exitCode = runIndexer(targetDir, { force, quiet });
 
   if (exitCode === 0 && !noInject) {
