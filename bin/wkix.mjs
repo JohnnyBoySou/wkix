@@ -138,6 +138,17 @@ function upsertSection(filePath, section) {
   }
 }
 
+function ensureGitignore(targetDir, quiet) {
+  const gitignorePath = path.join(targetDir, ".gitignore");
+  const entry = ".workspace/";
+  let content = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf8") : "";
+  const lines = content.split("\n");
+  if (lines.some((l) => l.trim() === entry)) return;
+  const separator = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
+  writeFileSync(gitignorePath, content + separator + entry + "\n", "utf8");
+  if (!quiet) console.log(`  updated  .gitignore (+${entry})`);
+}
+
 function writeAgentInstructions(targetDir, quiet) {
   const stats = readWorkspaceStats(targetDir);
   const section = buildWorkspaceSection(stats);
@@ -210,6 +221,7 @@ function main() {
   const exitCode = runIndexer(targetDir, { force, quiet });
 
   if (exitCode === 0 && !noInject) {
+    ensureGitignore(targetDir, quiet);
     writeAgentInstructions(targetDir, quiet);
   }
 
