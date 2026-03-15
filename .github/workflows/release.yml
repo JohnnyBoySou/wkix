@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - "v*"
+      - "[0-9]*"
+  release:
+    types: [published]
 
 jobs:
   build:
@@ -71,7 +74,8 @@ jobs:
 
       - name: Set version from tag
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          TAG=${GITHUB_REF_NAME:-${GITHUB_REF#refs/tags/}}
+          VERSION=${TAG#v}
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           npm version "$VERSION" --no-git-tag-version
 
