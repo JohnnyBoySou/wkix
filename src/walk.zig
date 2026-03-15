@@ -156,7 +156,7 @@ pub fn walkRepo(options: WalkOptions) !std.ArrayList(WalkedFile) {
         }
 
         const posix_rel = try pathToPosix(allocator, rel_path);
-        const to_free_posix = if (path.sep != '/') posix_rel else @as(?[]const u8, null);
+        const to_free_posix: ?[]const u8 = if (path.sep != '/') posix_rel else null;
         defer if (to_free_posix) |s| allocator.free(s);
         const abs_path = try path.join(allocator, &.{ options.root_absolute_path, rel_path });
         try result.append(allocator, .{

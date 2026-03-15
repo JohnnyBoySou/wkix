@@ -45,7 +45,8 @@ pub fn buildMetadataJson(allocator: std.mem.Allocator, root: []const u8, file_ha
     var aw = Writer.Allocating.init(allocator);
     defer aw.deinit();
     const w = &aw.writer;
-    const now_ms = blk: {
+    const now_ms: i64 = blk: {
+        if (comptime @import("builtin").os.tag == .windows) break :blk 0;
         const spec = std.posix.clock_gettime(.REALTIME) catch break :blk @as(i64, 0);
         break :blk @as(i64, spec.sec) * 1000 + @as(i64, @divTrunc(spec.nsec, 1_000_000));
     };

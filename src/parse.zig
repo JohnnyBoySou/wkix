@@ -5,6 +5,7 @@ const File = std.Io.File;
 const types = @import("types");
 
 fn nowMs() i64 {
+    if (comptime @import("builtin").os.tag == .windows) return 0;
     const spec = std.posix.clock_gettime(.REALTIME) catch return 0;
     return @as(i64, spec.sec) * 1000 + @as(i64, @divTrunc(spec.nsec, 1_000_000));
 }

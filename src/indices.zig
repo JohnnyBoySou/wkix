@@ -5,6 +5,7 @@ const types = @import("types");
 const walk = @import("walk");
 
 fn nowMs() i64 {
+    if (comptime @import("builtin").os.tag == .windows) return 0;
     const ts = std.posix.clock_gettime(.REALTIME) catch return 0;
     return @as(i64, ts.sec) * 1000 + @as(i64, @divTrunc(ts.nsec, 1_000_000));
 }
