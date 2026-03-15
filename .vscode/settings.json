@@ -1,0 +1,5 @@
+{
+    "files.exclude": {
+        "type/workspace/node_modules": true
+    }
+}

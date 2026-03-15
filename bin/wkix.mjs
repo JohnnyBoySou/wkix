@@ -1,13 +1,3 @@
-#!/usr/bin/env node
-
-/**
- * CLI do workspace indexer.
- * Uso: workspace generate [--force] [--quiet] [<repo_root>]
- *
- * Após indexar, injeta/atualiza a seção ## Workspace Index em CLAUDE.md e AGENTS.md
- * do repositório alvo, com instruções para o agente consultar .workspace/ primeiro.
- */
-
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -17,7 +7,6 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(__dirname, "..");
 
-// ─── Binary resolution ────────────────────────────────────────────────────────
 
 const PLATFORM_PACKAGES = {
   "linux-x64":    "@myselfcoding/wkix-linux-x64",
@@ -31,7 +20,6 @@ function resolveBinary() {
   const pkgName = PLATFORM_PACKAGES[key];
   const binName = process.platform === "win32" ? "wkix.exe" : "wkix";
 
-  // 1. Try platform-specific npm package (installed as optionalDependency)
   if (pkgName) {
     try {
       const require = createRequire(import.meta.url);
@@ -41,15 +29,12 @@ function resolveBinary() {
     } catch {}
   }
 
-  // 2. Try local zig-out (dev / build-from-source)
   const localBin = path.join(pkgRoot, "zig-out", "bin", binName);
   if (existsSync(localBin)) return { bin: localBin, fallback: false };
 
-  // 3. Fallback: invoke via zig build run (requires Zig installed)
   return { bin: null, fallback: true };
 }
 
-// ─── Indexer ──────────────────────────────────────────────────────────────────
 
 function runIndexer(targetDir, { force, quiet }) {
   const { bin, fallback } = resolveBinary();
@@ -73,7 +58,6 @@ function runIndexer(targetDir, { force, quiet }) {
   return result.status ?? 0;
 }
 
-// ─── Lê stats do .workspace gerado ────────────────────────────────────────────
 
 function readWorkspaceStats(targetDir) {
   const wsDir = path.join(targetDir, ".workspace");
@@ -91,7 +75,6 @@ function readWorkspaceStats(targetDir) {
   }
 }
 
-// ─── Gera a seção Markdown ────────────────────────────────────────────────────
 
 function buildWorkspaceSection(stats) {
   return `## Workspace Index
@@ -121,10 +104,9 @@ This repository has a pre-generated codebase index in \`.workspace/\`.
 `;
 }
 
-// ─── Injeta/atualiza seção em CLAUDE.md / AGENTS.md ──────────────────────────
 
 const SECTION_MARKER_START = "## Workspace Index";
-const SECTION_MARKER_END_RE = /^## /m; // próximo h2 indica fim da seção
+const SECTION_MARKER_END_RE = /^## /m;
 
 function upsertSection(filePath, section) {
   let existing = "";
@@ -134,11 +116,9 @@ function upsertSection(filePath, section) {
 
   const startIdx = existing.indexOf(SECTION_MARKER_START);
   if (startIdx === -1) {
-    // Seção não existe — adiciona no final
     const separator = existing.length > 0 && !existing.endsWith("\n\n") ? "\n\n" : "";
     writeFileSync(filePath, existing + separator + section, "utf8");
   } else {
-    // Seção existe — substitui do início até o próximo h2 (ou fim do arquivo)
     const afterStart = existing.slice(startIdx + SECTION_MARKER_START.length);
     const nextH2 = afterStart.search(SECTION_MARKER_END_RE);
     const endIdx = nextH2 === -1 ? existing.length : startIdx + SECTION_MARKER_START.length + nextH2;
@@ -154,13 +134,11 @@ function writeAgentInstructions(targetDir, quiet) {
   const targets = ["CLAUDE.md", "AGENTS.md"];
   for (const name of targets) {
     const filePath = path.join(targetDir, name);
-    // Só cria AGENTS.md se já existir; CLAUDE.md sempre cria/atualiza
     if (name === "AGENTS.md" && !existsSync(filePath)) continue;
     upsertSection(filePath, section);
     if (!quiet) console.log(`  updated  ${name}`);
   }
 
-  // Cria CLAUDE.md se não existia nenhum dos dois
   const claudePath = path.join(targetDir, "CLAUDE.md");
   if (!existsSync(claudePath)) {
     upsertSection(claudePath, section);
@@ -168,7 +146,6 @@ function writeAgentInstructions(targetDir, quiet) {
   }
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
 
 function main() {
   const argv = process.argv.slice(2);
