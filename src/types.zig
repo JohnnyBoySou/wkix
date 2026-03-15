@@ -22,6 +22,11 @@ pub const CodeSymbol = struct {
     parent_name: ?[]const u8 = null,
     doc_comment: ?[]const u8 = null,
     is_exported: bool = false,
+    // ── new fields ──────────────────────────────────────────────────────────
+    calls: std.ArrayList([]const u8) = .empty,      // names of functions called in this symbol's body
+    extends: ?[]const u8 = null,                     // class/interface: first extended type name
+    implements: std.ArrayList([]const u8) = .empty,  // class: implemented interface names
+    branches: u32 = 0,                               // branch-point count (for complexity)
 };
 
 pub const Parameter = struct {
@@ -149,6 +154,90 @@ pub const TestMap = struct {
     map: std.StringHashMap(std.ArrayList([]const u8)),
 };
 
+// ─── call_graph.json ────────────────────────────────────────────────────────
+/// symbol_id → list of called function/method names (deduplicated, from body AST).
+pub const CallGraph = struct {
+    indexed_at: i64,
+    entries: std.StringHashMap(std.ArrayList([]const u8)),
+};
+
+// ─── type_hierarchy.json ────────────────────────────────────────────────────
+pub const TypeNode = struct {
+    name: []const u8,
+    kind: []const u8,       // "class" | "abstract_class" | "interface"
+    extends: ?[]const u8,   // first extended type name
+    implements: std.ArrayList([]const u8), // implemented interface names
+    file: []const u8,
+    line: u32,
+};
+
+pub const TypeHierarchy = struct {
+    indexed_at: i64,
+    nodes: std.ArrayList(TypeNode),
+};
+
+// ─── env_vars.json ──────────────────────────────────────────────────────────
+pub const EnvVarUsage = struct {
+    name: []const u8,
+    file: []const u8,
+    line: u32,
+};
+
+pub const EnvVarIndex = struct {
+    indexed_at: i64,
+    vars: std.ArrayList([]const u8),       // unique variable names
+    usages: std.ArrayList(EnvVarUsage),
+};
+
+// ─── dead_code.json ─────────────────────────────────────────────────────────
+pub const DeadExport = struct {
+    file: []const u8,
+    symbol: []const u8,
+    kind: []const u8,
+    line: u32,
+};
+
+pub const DeadCode = struct {
+    indexed_at: i64,
+    unused_exports: std.ArrayList(DeadExport),
+    unreachable_files: std.ArrayList([]const u8),
+};
+
+// ─── api_surface.json ───────────────────────────────────────────────────────
+pub const ApiEntry = struct {
+    file: []const u8,
+    name: []const u8,
+    kind: []const u8,
+    signature: []const u8,  // "(param: Type): ReturnType" or "extends Foo"
+    line: u32,
+    doc: ?[]const u8,
+};
+
+pub const ApiSurface = struct {
+    indexed_at: i64,
+    count: usize,
+    entries: std.ArrayList(ApiEntry),
+};
+
+// ─── complexity.json ────────────────────────────────────────────────────────
+pub const FunctionComplexity = struct {
+    symbol_id: []const u8,
+    name: []const u8,
+    file: []const u8,
+    kind: []const u8,
+    lines: u32,
+    branches: u32,
+    complexity: u32,  // McCabe approximation: branches + 1
+    line: u32,
+};
+
+pub const ComplexityIndex = struct {
+    indexed_at: i64,
+    total_functions: usize,
+    avg_complexity: f32,
+    functions: std.ArrayList(FunctionComplexity),
+};
+
 pub fn languageToString(lang: Language) []const u8 {
     return switch (lang) {
         .typescript => "typescript",
@@ -166,6 +255,7 @@ pub fn codeSymbolDeinit(s: *CodeSymbol, allocator: std.mem.Allocator) void {
     if (s.return_type) |rt| allocator.free(rt);
     if (s.parent_name) |pn| allocator.free(pn);
     if (s.doc_comment) |dc| allocator.free(dc);
+    if (s.extends) |e| allocator.free(e);
     // modifiers são literais ("export", "async", etc.), não alocados
     s.modifiers.deinit(allocator);
     for (s.parameters.items) |*p| {
@@ -176,6 +266,10 @@ pub fn codeSymbolDeinit(s: *CodeSymbol, allocator: std.mem.Allocator) void {
     s.parameters.deinit(allocator);
     for (s.type_parameters.items) |tp| allocator.free(tp);
     s.type_parameters.deinit(allocator);
+    for (s.calls.items) |c| allocator.free(c);
+    s.calls.deinit(allocator);
+    for (s.implements.items) |impl| allocator.free(impl);
+    s.implements.deinit(allocator);
 }
 
 pub fn fileNodeDeinit(node: *FileNode, allocator: std.mem.Allocator) void {

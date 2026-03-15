@@ -230,6 +230,18 @@ pub fn main(init: std.process.Init) !void {
     defer indices.todoDeinit(allocator, &todo_index);
     var test_map = indices.buildTestMap(allocator, all_nodes.items) catch return error.OutOfMemory;
     defer indices.testMapDeinit(allocator, &test_map);
+    var call_graph = indices.buildCallGraph(allocator, all_nodes.items) catch return error.OutOfMemory;
+    defer indices.callGraphDeinit(allocator, &call_graph);
+    var type_hierarchy = indices.buildTypeHierarchy(allocator, all_nodes.items) catch return error.OutOfMemory;
+    defer indices.typeHierarchyDeinit(allocator, &type_hierarchy);
+    var env_vars = indices.buildEnvVarIndex(allocator, io, walked.items) catch return error.OutOfMemory;
+    defer indices.envVarIndexDeinit(allocator, &env_vars);
+    var complexity = indices.buildComplexityIndex(allocator, all_nodes.items) catch return error.OutOfMemory;
+    defer indices.complexityIndexDeinit(allocator, &complexity);
+    var dead_code = indices.buildDeadCode(allocator, all_nodes.items, &import_graph) catch return error.OutOfMemory;
+    defer indices.deadCodeDeinit(allocator, &dead_code);
+    var api_surface = indices.buildApiSurface(allocator, all_nodes.items) catch return error.OutOfMemory;
+    defer indices.apiSurfaceDeinit(allocator, &api_surface);
 
     // 6. Write .workspace
     std.Io.Dir.createDirAbsolute(io, workspace_dir, .default_dir) catch {};
@@ -260,6 +272,24 @@ pub fn main(init: std.process.Init) !void {
     const test_map_json = try writer.buildTestMapJson(allocator, &test_map);
     defer allocator.free(test_map_json);
     try writer.writeJsonFile(allocator, io, workspace_dir, "test_map.json", test_map_json);
+    const call_graph_json = try writer.buildCallGraphJson(allocator, &call_graph);
+    defer allocator.free(call_graph_json);
+    try writer.writeJsonFile(allocator, io, workspace_dir, "call_graph.json", call_graph_json);
+    const type_hierarchy_json = try writer.buildTypeHierarchyJson(allocator, &type_hierarchy);
+    defer allocator.free(type_hierarchy_json);
+    try writer.writeJsonFile(allocator, io, workspace_dir, "type_hierarchy.json", type_hierarchy_json);
+    const env_vars_json = try writer.buildEnvVarIndexJson(allocator, &env_vars);
+    defer allocator.free(env_vars_json);
+    try writer.writeJsonFile(allocator, io, workspace_dir, "env_vars.json", env_vars_json);
+    const complexity_json = try writer.buildComplexityIndexJson(allocator, &complexity);
+    defer allocator.free(complexity_json);
+    try writer.writeJsonFile(allocator, io, workspace_dir, "complexity.json", complexity_json);
+    const dead_code_json = try writer.buildDeadCodeJson(allocator, &dead_code);
+    defer allocator.free(dead_code_json);
+    try writer.writeJsonFile(allocator, io, workspace_dir, "dead_code.json", dead_code_json);
+    const api_surface_json = try writer.buildApiSurfaceJson(allocator, &api_surface);
+    defer allocator.free(api_surface_json);
+    try writer.writeJsonFile(allocator, io, workspace_dir, "api_surface.json", api_surface_json);
     if (t_start) |ts| {
         const now = time.Instant.now() catch ts;
         const elapsed_s = @as(f64, @floatFromInt(now.since(ts))) / 1_000_000_000.0;

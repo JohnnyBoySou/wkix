@@ -4,7 +4,9 @@
   "description": "Fast codebase indexer for AI agents — generates .workspace/*.json and updates CLAUDE.md/AGENTS.md",
   "type": "module",
   "bin": {
-    "wkix": "./bin/wkix.mjs"
+    "wkix": "./bin/wkix.mjs",
+    "wkix-lint": "./bin/oxlint.mjs",
+    "wkix-graph": "./bin/graph.mjs"
   },
   "files": [
     "bin/",
