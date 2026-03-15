@@ -1,10 +1,16 @@
 {
   "name": "@myselfcoding/wkix-darwin-arm64",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "wkix binary for macOS ARM64 (Apple Silicon)",
-  "os": ["darwin"],
-  "cpu": ["arm64"],
-  "files": ["bin/"],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",

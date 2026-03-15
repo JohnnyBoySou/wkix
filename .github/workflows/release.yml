@@ -34,15 +34,16 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          ROOT=$(pwd)
           for pkg in wkix-linux-x64 wkix-darwin-x64 wkix-darwin-arm64 wkix-win32-x64; do
             node -e "
               const fs = require('fs');
-              const p = 'packages/$pkg/package.json';
+              const p = '$ROOT/packages/$pkg/package.json';
               const j = JSON.parse(fs.readFileSync(p, 'utf8'));
               j.version = process.env.VERSION;
               fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
             "
-            cd packages/$pkg && npm publish --access public && cd ../..
+            npm publish "$ROOT/packages/$pkg" --access public
           done
 
       - name: Update optionalDependencies and publish main package

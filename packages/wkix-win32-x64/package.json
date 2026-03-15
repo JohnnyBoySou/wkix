@@ -1,10 +1,16 @@
 {
   "name": "@myselfcoding/wkix-win32-x64",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "wkix binary for Windows x64",
-  "os": ["win32"],
-  "cpu": ["x64"],
-  "files": ["bin/"],
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",

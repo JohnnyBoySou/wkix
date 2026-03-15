@@ -1,6 +1,6 @@
 {
   "name": "@myselfcoding/wkix",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Fast codebase indexer for AI agents — generates .workspace/*.json and updates CLAUDE.md/AGENTS.md",
   "type": "module",
   "bin": {
@@ -13,17 +13,26 @@
   "scripts": {
     "build:zig": "zig build -Doptimize=ReleaseFast"
   },
-  "keywords": ["codebase", "index", "workspace", "llm", "ai", "zig"],
+  "keywords": [
+    "codebase",
+    "index",
+    "workspace",
+    "llm",
+    "ai",
+    "zig"
+  ],
   "license": "MIT",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/JohnnyBoySou/wkix"
   },
   "optionalDependencies": {
-    "@myselfcoding/wkix-linux-x64": "0.1.0",
-    "@myselfcoding/wkix-darwin-arm64": "0.1.0",
-    "@myselfcoding/wkix-darwin-x64": "0.1.0",
-    "@myselfcoding/wkix-win32-x64": "0.1.0"
+    "@myselfcoding/wkix-linux-x64": "0.1.1",
+    "@myselfcoding/wkix-darwin-arm64": "0.1.1",
+    "@myselfcoding/wkix-darwin-x64": "0.1.1",
+    "@myselfcoding/wkix-win32-x64": "0.1.1"
   }
 }
