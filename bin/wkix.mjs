@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runLint } from "./oxlint.mjs";
 import { runGraph } from "./graph.mjs";
+import { runExtras } from "./extras.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(__dirname, "..");
@@ -95,10 +96,7 @@ This repository has a pre-generated codebase index in \`.workspace/\`.
 | \`.workspace/repo_docs.json\` | README and documentation content | Project overview |
 | \`.workspace/project_metadata.json\` | Package name, scripts, dependency counts | Project configuration |
 | \`.workspace/test_map.json\` | Source file → test file mapping | Find tests for a module |
-| \`.workspace/call_graph.json\` | Per-symbol list of called function names — extracted from AST | Trace execution flow without reading code |
-| \`.workspace/type_hierarchy.json\` | Classes/interfaces with their extends and implements — full inheritance tree | Understand type relationships instantly |
 | \`.workspace/env_vars.json\` | All \`process.env.X\` usages with file and line — unique var list + full usage list | Know all config variables at a glance |
-| \`.workspace/complexity.json\` | Per-function McCabe complexity, branch count, line count | Find complex/risky functions before editing |
 | \`.workspace/dead_code.json\` | Exported symbols never imported + files with no importers | Identify unused code safely |
 | \`.workspace/api_surface.json\` | All exported symbols with signatures and doc — the public API | Understand module interfaces without reading implementation |
 | \`.workspace/lint.json\` | Oxlint diagnostics grouped by file — errors, warnings, rule names and line numbers | Find lint errors without running the linter |
@@ -221,6 +219,7 @@ function main() {
   const exitCode = runIndexer(targetDir, { force, quiet });
 
   if (exitCode === 0 && !noInject) {
+    runExtras(targetDir, { quiet });
     ensureGitignore(targetDir, quiet);
     writeAgentInstructions(targetDir, quiet);
   }
