@@ -69,38 +69,199 @@ Run from the root of a JavaScript/TypeScript project. The command:
 
 All files are written to `.workspace/` at the repo root.
 
-| File                 | Contents |
-|----------------------|----------|
-| `repo_map.json`      | Every file — path, size, lines, symbol/export/import counts |
-| `symbols.json`       | Functions, classes, types, enums with exact line, parameters, return type, doc. Includes `byName` map for O(1) lookup |
-| `import_graph.json`  | Per-file `imports` and `importedBy` (resolved, not raw strings) |
-| `chunks.json`        | Code split into logical chunks with full content |
-| `todos.json`         | TODO / FIXME / HACK / NOTE / XXX comments with file and line |
-| `repo_docs.json`     | README content |
+| File                    | Contents |
+|-------------------------|----------|
+| `repo_map.json`         | Every file — path, size, lines, symbol/export/import counts |
+| `symbols.json`          | Functions, classes, types, enums with exact line, parameters, return type. Includes `byName` map for O(1) lookup |
+| `import_graph.json`     | Per-file `imports` and `importedBy` (resolved paths) |
+| `chunks.json`           | Code split into logical chunks with full content |
+| `todos.json`            | TODO / FIXME / HACK / NOTE / XXX comments with file and line |
+| `repo_docs.json`        | README content |
 | `project_metadata.json` | Package name, scripts, dependency counts |
-| `test_map.json`      | Source file → test file mapping |
-| `metadata.json`      | File hashes used for incremental indexing |
+| `test_map.json`         | Source file → test file mapping |
+| `call_graph.json`       | Per-function list of project functions called within each body |
+| `type_hierarchy.json`   | Classes/interfaces with extends and implements |
+| `env_vars.json`         | All `process.env.VAR` usages with file and line |
+| `complexity.json`       | McCabe complexity per function, sorted by hotspots |
+| `dead_code.json`        | Exported symbols never imported + orphan files |
+| `api_surface.json`      | All exported symbols with computed signatures |
+| `lint.json`             | Oxlint diagnostics grouped by file (run `wkix lint`) |
+| `graph.md`              | Mermaid import graph (run `wkix graph`) |
+| `metadata.json`         | File hashes used for incremental indexing |
 
-### Example: finding a symbol
+---
+
+## File examples
+
+### `symbols.json` — locate any function/class by name instantly
 
 ```json
-// .workspace/symbols.json → byName["useAuth"]
 {
-  "id": "src/hooks/useAuth.ts::useAuth",
-  "kind": "function",
-  "line": 12,
-  "params": ["options?: AuthOptions"],
-  "returnType": "AuthContext"
+  "byName": {
+    "createUser": [{
+      "name": "createUser",
+      "kind": "function",
+      "file": "src/users.ts",
+      "line": 42,
+      "exported": true,
+      "params": ["email: string", "role: Role"],
+      "returnType": "Promise<User>"
+    }]
+  }
 }
 ```
 
-### Example: import graph
+### `import_graph.json` — trace who imports what in both directions
 
 ```json
-// .workspace/import_graph.json → nodes["src/pages/Login.tsx"]
 {
-  "imports": ["src/hooks/useAuth.ts", "src/components/Button.tsx"],
-  "importedBy": ["src/App.tsx"]
+  "graph": {
+    "src/users.ts": {
+      "imports": ["src/db.ts", "src/types.ts"],
+      "importedBy": ["src/routes/auth.ts", "src/routes/admin.ts"]
+    }
+  }
+}
+```
+
+### `call_graph.json` — see which project functions a function calls
+
+```json
+{
+  "graph": {
+    "src/users.ts::createUser": {
+      "name": "createUser",
+      "file": "src/users.ts",
+      "line": 42,
+      "calls": ["hashPassword", "sendWelcomeEmail", "validateEmail"]
+    }
+  }
+}
+```
+
+### `type_hierarchy.json` — trace class/interface inheritance
+
+```json
+{
+  "classes": [
+    {
+      "name": "AdminUser",
+      "file": "src/models/user.ts",
+      "line": 10,
+      "extends": "BaseUser",
+      "implements": ["ISerializable", "IAuditable"]
+    }
+  ],
+  "interfaces": [
+    {
+      "name": "IAuditable",
+      "file": "src/types.ts",
+      "line": 3,
+      "extends": ["ITimestamped"]
+    }
+  ]
+}
+```
+
+### `complexity.json` — find the riskiest functions before editing
+
+```json
+{
+  "summary": { "functionCount": 48, "maxComplexity": 14, "highComplexityCount": 3 },
+  "functions": [
+    { "name": "processOrder", "file": "src/orders.ts", "line": 88, "complexity": 14, "branches": 13, "lineCount": 97 },
+    { "name": "parseConfig",  "file": "src/config.ts", "line": 12, "complexity": 9,  "branches": 8,  "lineCount": 61 }
+  ]
+}
+```
+
+### `dead_code.json` — spot unused exports and orphan files
+
+```json
+{
+  "summary": { "unusedExportCount": 2, "orphanFileCount": 1 },
+  "unusedExports": [
+    { "name": "legacyFormat", "kind": "function", "file": "src/utils.ts", "line": 201 }
+  ],
+  "orphanFiles": ["src/old-helpers.ts"]
+}
+```
+
+### `api_surface.json` — read the public API without opening files
+
+```json
+{
+  "byFile": {
+    "src/users.ts": [
+      { "name": "createUser", "kind": "function", "line": 42, "signature": "(email: string, role: Role): Promise<User>" },
+      { "name": "UserService", "kind": "class",    "line": 10, "signature": "extends BaseService implements IUserService" }
+    ]
+  }
+}
+```
+
+### `env_vars.json` — know every required environment variable
+
+```json
+{
+  "unique": ["DATABASE_URL", "JWT_SECRET", "PORT"],
+  "usages": [
+    { "variable": "DATABASE_URL", "file": "src/db.ts",     "line": 3 },
+    { "variable": "JWT_SECRET",   "file": "src/auth.ts",   "line": 17 },
+    { "variable": "PORT",         "file": "src/server.ts", "line": 5 }
+  ]
+}
+```
+
+### `todos.json` — find all known issues in one place
+
+```json
+{
+  "entries": [
+    { "kind": "TODO",  "text": "add rate limiting",       "file": "src/routes/auth.ts", "line": 55 },
+    { "kind": "FIXME", "text": "handle empty array edge case", "file": "src/utils.ts", "line": 102 }
+  ]
+}
+```
+
+### `lint.json` — check lint errors without running the linter
+
+```json
+{
+  "summary": { "total": 3, "errors": 1, "warnings": 2, "filesAffected": 2 },
+  "byFile": {
+    "src/users.ts": [
+      { "rule": "no-unused-vars", "severity": "error", "message": "'tmp' is declared but never read", "line": 12 }
+    ]
+  }
+}
+```
+
+### `chunks.json` — read code snippets without opening full files
+
+```json
+{
+  "chunks": [
+    {
+      "id": "src/users.ts#42-78",
+      "file": "src/users.ts",
+      "startLine": 42,
+      "endLine": 78,
+      "symbolName": "createUser",
+      "content": "export async function createUser(email: string) {\n  ..."
+    }
+  ]
+}
+```
+
+### `test_map.json` — jump straight to a module's tests
+
+```json
+{
+  "map": {
+    "src/users.ts": "src/users.test.ts",
+    "src/orders.ts": "src/__tests__/orders.spec.ts"
+  }
 }
 ```
 
