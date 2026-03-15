@@ -43,7 +43,7 @@ jobs:
 
       - uses: mlugg/setup-zig@v1
         with:
-          version: "master"
+          version: "0.16.0-dev.2040+c475f1fcd"
 
       - name: Build binary
         run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}
