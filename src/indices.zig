@@ -52,6 +52,10 @@ fn dupCodeSymbol(allocator: std.mem.Allocator, s: *const types.CodeSymbol) !type
     }
     var tparams: std.ArrayList([]const u8) = .empty;
     for (s.type_parameters.items) |tp| try tparams.append(allocator, try allocator.dupe(u8, tp));
+    var calls: std.ArrayList([]const u8) = .empty;
+    for (s.calls.items) |c| try calls.append(allocator, try allocator.dupe(u8, c));
+    var implements: std.ArrayList([]const u8) = .empty;
+    for (s.implements.items) |impl| try implements.append(allocator, try allocator.dupe(u8, impl));
     return .{
         .id = try allocator.dupe(u8, s.id),
         .name = try allocator.dupe(u8, s.name),
@@ -64,6 +68,10 @@ fn dupCodeSymbol(allocator: std.mem.Allocator, s: *const types.CodeSymbol) !type
         .parent_name = if (s.parent_name) |pn| try allocator.dupe(u8, pn) else null,
         .doc_comment = if (s.doc_comment) |dc| try allocator.dupe(u8, dc) else null,
         .is_exported = s.is_exported,
+        .calls = calls,
+        .extends = if (s.extends) |e| try allocator.dupe(u8, e) else null,
+        .implements = implements,
+        .branches = s.branches,
     };
 }
 
@@ -496,4 +504,345 @@ pub fn todoDeinit(allocator: std.mem.Allocator, index: *types.TodoIndex) void {
         allocator.free(e.text);
     }
     index.entries.deinit(allocator);
+}
+
+// ─── call_graph.json ─────────────────────────────────────────────────────────
+
+/// Build call graph: symbol_id → deduplicated list of called names.
+pub fn buildCallGraph(allocator: std.mem.Allocator, nodes: []const types.FileNode) !types.CallGraph {
+    var entries = std.StringHashMap(std.ArrayList([]const u8)).init(allocator);
+    for (nodes) |*n| {
+        for (n.symbols.items) |*s| {
+            if (s.calls.items.len == 0) continue;
+            var calls_copy: std.ArrayList([]const u8) = .empty;
+            for (s.calls.items) |c| try calls_copy.append(allocator, try allocator.dupe(u8, c));
+            const id_copy = try allocator.dupe(u8, s.id);
+            try entries.put(id_copy, calls_copy);
+        }
+    }
+    return .{ .indexed_at = nowMs(), .entries = entries };
+}
+
+pub fn callGraphDeinit(allocator: std.mem.Allocator, cg: *types.CallGraph) void {
+    var it = cg.entries.iterator();
+    while (it.next()) |e| {
+        allocator.free(e.key_ptr.*);
+        for (e.value_ptr.items) |c| allocator.free(c);
+        e.value_ptr.deinit(allocator);
+    }
+    cg.entries.deinit();
+}
+
+// ─── type_hierarchy.json ─────────────────────────────────────────────────────
+
+/// Build type hierarchy from classes and interfaces that have extends/implements.
+pub fn buildTypeHierarchy(allocator: std.mem.Allocator, nodes: []const types.FileNode) !types.TypeHierarchy {
+    var type_nodes: std.ArrayList(types.TypeNode) = .empty;
+    for (nodes) |*n| {
+        for (n.symbols.items) |*s| {
+            if (!std.mem.eql(u8, s.kind, "class") and
+                !std.mem.eql(u8, s.kind, "abstract_class") and
+                !std.mem.eql(u8, s.kind, "interface")) continue;
+            if (s.extends == null and s.implements.items.len == 0) continue;
+
+            // file path is the part of the id before '#'
+            const sep = std.mem.indexOf(u8, s.id, "#");
+            const sym_file = if (sep) |sp| s.id[0..sp] else n.path;
+
+            var impls_copy: std.ArrayList([]const u8) = .empty;
+            for (s.implements.items) |impl| try impls_copy.append(allocator, try allocator.dupe(u8, impl));
+
+            try type_nodes.append(allocator, .{
+                .name = try allocator.dupe(u8, s.name),
+                .kind = try allocator.dupe(u8, s.kind),
+                .extends = if (s.extends) |e| try allocator.dupe(u8, e) else null,
+                .implements = impls_copy,
+                .file = try allocator.dupe(u8, sym_file),
+                .line = s.range.start.line,
+            });
+        }
+    }
+    return .{ .indexed_at = nowMs(), .nodes = type_nodes };
+}
+
+pub fn typeHierarchyDeinit(allocator: std.mem.Allocator, th: *types.TypeHierarchy) void {
+    for (th.nodes.items) |*n| {
+        allocator.free(n.name);
+        allocator.free(n.kind);
+        allocator.free(n.file);
+        if (n.extends) |e| allocator.free(e);
+        for (n.implements.items) |impl| allocator.free(impl);
+        n.implements.deinit(allocator);
+    }
+    th.nodes.deinit(allocator);
+}
+
+// ─── env_vars.json ───────────────────────────────────────────────────────────
+
+/// Scan source files for `process.env.VAR_NAME` usages.
+pub fn buildEnvVarIndex(allocator: std.mem.Allocator, io: Io, walked: []const walk.WalkedFile) !types.EnvVarIndex {
+    var usages: std.ArrayList(types.EnvVarUsage) = .empty;
+    var seen_vars = std.StringHashMap(void).init(allocator);
+    defer seen_vars.deinit();
+    var vars: std.ArrayList([]const u8) = .empty;
+    const needle = "process.env.";
+
+    for (walked) |w| {
+        const f = Dir.openFileAbsolute(io, w.absolute_path, .{}) catch continue;
+        defer f.close(io);
+        var buf: [1 * 1024 * 1024]u8 = undefined;
+        const n = f.readPositionalAll(io, &buf, 0) catch continue;
+        const content = buf[0..n];
+
+        var line_num: u32 = 1;
+        var line_start: usize = 0;
+        while (line_start < content.len) {
+            var line_end = line_start;
+            while (line_end < content.len and content[line_end] != '\n') line_end += 1;
+            const line = content[line_start..line_end];
+
+            var search_pos: usize = 0;
+            while (search_pos < line.len) {
+                const idx = std.mem.indexOf(u8, line[search_pos..], needle) orelse break;
+                const name_start = search_pos + idx + needle.len;
+                var name_end = name_start;
+                while (name_end < line.len and (std.ascii.isAlphanumeric(line[name_end]) or line[name_end] == '_')) {
+                    name_end += 1;
+                }
+                if (name_end > name_start) {
+                    const var_name = line[name_start..name_end];
+                    const var_dup = try allocator.dupe(u8, var_name);
+                    const file_dup = try allocator.dupe(u8, w.relative_path);
+                    try usages.append(allocator, .{ .name = var_dup, .file = file_dup, .line = line_num });
+                    if (!seen_vars.contains(var_name)) {
+                        const vdup = try allocator.dupe(u8, var_name);
+                        try seen_vars.put(vdup, {});
+                        try vars.append(allocator, vdup);
+                    }
+                }
+                search_pos += idx + needle.len + 1;
+            }
+
+            line_num += 1;
+            line_start = if (line_end < content.len) line_end + 1 else content.len;
+        }
+    }
+    return .{ .indexed_at = nowMs(), .vars = vars, .usages = usages };
+}
+
+pub fn envVarIndexDeinit(allocator: std.mem.Allocator, ev: *types.EnvVarIndex) void {
+    for (ev.vars.items) |v| allocator.free(v);
+    ev.vars.deinit(allocator);
+    for (ev.usages.items) |*u| {
+        allocator.free(u.name);
+        allocator.free(u.file);
+    }
+    ev.usages.deinit(allocator);
+}
+
+// ─── complexity.json ─────────────────────────────────────────────────────────
+
+const FUNCTION_KINDS = [_][]const u8{ "function", "arrow_function", "method", "constructor" };
+
+/// Build complexity index from function-like symbols.
+pub fn buildComplexityIndex(allocator: std.mem.Allocator, nodes: []const types.FileNode) !types.ComplexityIndex {
+    var functions: std.ArrayList(types.FunctionComplexity) = .empty;
+    var total_complexity: u64 = 0;
+
+    for (nodes) |*n| {
+        for (n.symbols.items) |*s| {
+            var is_func = false;
+            for (FUNCTION_KINDS) |fk| {
+                if (std.mem.eql(u8, s.kind, fk)) { is_func = true; break; }
+            }
+            if (!is_func) continue;
+
+            const lines: u32 = if (s.range.end.line > s.range.start.line)
+                s.range.end.line - s.range.start.line else 0;
+            const complexity: u32 = s.branches + 1;
+            total_complexity += complexity;
+
+            const sep = std.mem.indexOf(u8, s.id, "#");
+            const sym_file = if (sep) |sp| s.id[0..sp] else n.path;
+
+            try functions.append(allocator, .{
+                .symbol_id = try allocator.dupe(u8, s.id),
+                .name = try allocator.dupe(u8, s.name),
+                .file = try allocator.dupe(u8, sym_file),
+                .kind = try allocator.dupe(u8, s.kind),
+                .lines = lines,
+                .branches = s.branches,
+                .complexity = complexity,
+                .line = s.range.start.line,
+            });
+        }
+    }
+
+    const avg: f32 = if (functions.items.len > 0)
+        @as(f32, @floatFromInt(total_complexity)) / @as(f32, @floatFromInt(functions.items.len))
+    else 0.0;
+
+    return .{
+        .indexed_at = nowMs(),
+        .total_functions = functions.items.len,
+        .avg_complexity = avg,
+        .functions = functions,
+    };
+}
+
+pub fn complexityIndexDeinit(allocator: std.mem.Allocator, ci: *types.ComplexityIndex) void {
+    for (ci.functions.items) |*f| {
+        allocator.free(f.symbol_id);
+        allocator.free(f.name);
+        allocator.free(f.file);
+        allocator.free(f.kind);
+    }
+    ci.functions.deinit(allocator);
+}
+
+// ─── dead_code.json ──────────────────────────────────────────────────────────
+
+/// Detect exports never imported elsewhere and files no other file imports.
+pub fn buildDeadCode(
+    allocator: std.mem.Allocator,
+    nodes: []const types.FileNode,
+    graph: *const types.ImportGraph,
+) !types.DeadCode {
+    // Collect all names that are imported anywhere in the project
+    var imported_names = std.StringHashMap(void).init(allocator);
+    defer imported_names.deinit();
+    for (nodes) |*n| {
+        for (n.imports.items) |*imp| {
+            for (imp.names.items) |name| try imported_names.put(name, {});
+            if (imp.alias) |a| try imported_names.put(a, {});
+        }
+    }
+
+    // Find exported symbols whose name does not appear in any import
+    var unused: std.ArrayList(types.DeadExport) = .empty;
+    for (nodes) |*n| {
+        for (n.symbols.items) |*s| {
+            if (!s.is_exported) continue;
+            if (std.mem.eql(u8, s.name, "default")) continue; // skip default exports
+            if (imported_names.contains(s.name)) continue;
+            try unused.append(allocator, .{
+                .file = try allocator.dupe(u8, n.path),
+                .symbol = try allocator.dupe(u8, s.name),
+                .kind = try allocator.dupe(u8, s.kind),
+                .line = s.range.start.line,
+            });
+        }
+    }
+
+    // Find files with no importers (skip index/test/declaration files — likely entry points)
+    var unreachable: std.ArrayList([]const u8) = .empty;
+    var it = graph.nodes.iterator();
+    while (it.next()) |e| {
+        if (e.value_ptr.imported_by.items.len > 0) continue;
+        const path = e.key_ptr.*;
+        if (std.mem.indexOf(u8, path, "index") != null) continue;
+        if (std.mem.indexOf(u8, path, ".test.") != null) continue;
+        if (std.mem.indexOf(u8, path, ".spec.") != null) continue;
+        if (std.mem.endsWith(u8, path, ".d.ts")) continue;
+        try unreachable.append(allocator, try allocator.dupe(u8, path));
+    }
+
+    return .{ .indexed_at = nowMs(), .unused_exports = unused, .unreachable_files = unreachable };
+}
+
+pub fn deadCodeDeinit(allocator: std.mem.Allocator, dc: *types.DeadCode) void {
+    for (dc.unused_exports.items) |*e| {
+        allocator.free(e.file);
+        allocator.free(e.symbol);
+        allocator.free(e.kind);
+    }
+    dc.unused_exports.deinit(allocator);
+    for (dc.unreachable_files.items) |f| allocator.free(f);
+    dc.unreachable_files.deinit(allocator);
+}
+
+// ─── api_surface.json ────────────────────────────────────────────────────────
+
+fn buildSignature(allocator: std.mem.Allocator, s: *const types.CodeSymbol) ![]const u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(allocator);
+
+    const is_callable = std.mem.eql(u8, s.kind, "function") or
+        std.mem.eql(u8, s.kind, "arrow_function") or
+        std.mem.eql(u8, s.kind, "method") or
+        std.mem.eql(u8, s.kind, "constructor");
+
+    if (is_callable) {
+        try buf.appendSlice(allocator, "(");
+        for (s.parameters.items, 0..) |*p, i| {
+            if (i > 0) try buf.appendSlice(allocator, ", ");
+            try buf.appendSlice(allocator, p.name);
+            if (p.optional) try buf.appendSlice(allocator, "?");
+            if (p.type_annot) |ta| {
+                try buf.appendSlice(allocator, ": ");
+                try buf.appendSlice(allocator, ta);
+            }
+        }
+        try buf.appendSlice(allocator, ")");
+        if (s.return_type) |rt| {
+            try buf.appendSlice(allocator, ": ");
+            try buf.appendSlice(allocator, rt);
+        }
+        return allocator.dupe(u8, buf.items);
+    }
+
+    if (std.mem.eql(u8, s.kind, "class") or std.mem.eql(u8, s.kind, "abstract_class")) {
+        if (s.extends) |e| {
+            try buf.appendSlice(allocator, "extends ");
+            try buf.appendSlice(allocator, e);
+        }
+        for (s.implements.items, 0..) |impl, i| {
+            if (i == 0) {
+                if (buf.items.len > 0) try buf.appendSlice(allocator, " ");
+                try buf.appendSlice(allocator, "implements ");
+            } else try buf.appendSlice(allocator, ", ");
+            try buf.appendSlice(allocator, impl);
+        }
+        return allocator.dupe(u8, buf.items);
+    }
+
+    if (std.mem.eql(u8, s.kind, "interface")) {
+        if (s.extends) |e| return std.fmt.allocPrint(allocator, "extends {s}", .{e});
+        return allocator.dupe(u8, "");
+    }
+
+    if (s.return_type) |rt| return allocator.dupe(u8, rt);
+    return allocator.dupe(u8, "");
+}
+
+/// Distilled public API: only exported symbols with their signatures.
+pub fn buildApiSurface(allocator: std.mem.Allocator, nodes: []const types.FileNode) !types.ApiSurface {
+    var entries: std.ArrayList(types.ApiEntry) = .empty;
+    for (nodes) |*n| {
+        for (n.symbols.items) |*s| {
+            if (!s.is_exported) continue;
+            const sep = std.mem.indexOf(u8, s.id, "#");
+            const sym_file = if (sep) |sp| s.id[0..sp] else n.path;
+            try entries.append(allocator, .{
+                .file = try allocator.dupe(u8, sym_file),
+                .name = try allocator.dupe(u8, s.name),
+                .kind = try allocator.dupe(u8, s.kind),
+                .signature = try buildSignature(allocator, s),
+                .line = s.range.start.line,
+                .doc = if (s.doc_comment) |dc| try allocator.dupe(u8, dc) else null,
+            });
+        }
+    }
+    return .{ .indexed_at = nowMs(), .count = entries.items.len, .entries = entries };
+}
+
+pub fn apiSurfaceDeinit(allocator: std.mem.Allocator, api: *types.ApiSurface) void {
+    for (api.entries.items) |*e| {
+        allocator.free(e.file);
+        allocator.free(e.name);
+        allocator.free(e.kind);
+        allocator.free(e.signature);
+        if (e.doc) |d| allocator.free(d);
+    }
+    api.entries.deinit(allocator);
 }

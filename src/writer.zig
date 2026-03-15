@@ -227,7 +227,29 @@ fn writeSymbolJson(w: *Writer, s: *const types.CodeSymbol) !void {
         try w.writeAll(", \"docComment\": ");
         try escapeJsonString(w, dc);
     }
-    try w.print(", \"isExported\": {} }}", .{s.is_exported});
+    try w.print(", \"isExported\": {}", .{s.is_exported});
+    if (s.extends) |e| {
+        try w.writeAll(", \"extends\": ");
+        try escapeJsonString(w, e);
+    }
+    if (s.implements.items.len > 0) {
+        try w.writeAll(", \"implements\": [");
+        for (s.implements.items, 0..) |impl, i| {
+            if (i > 0) try w.writeAll(", ");
+            try escapeJsonString(w, impl);
+        }
+        try w.writeAll("]");
+    }
+    if (s.calls.items.len > 0) {
+        try w.writeAll(", \"calls\": [");
+        for (s.calls.items, 0..) |c, i| {
+            if (i > 0) try w.writeAll(", ");
+            try escapeJsonString(w, c);
+        }
+        try w.writeAll("]");
+    }
+    if (s.branches > 0) try w.print(", \"branches\": {d}", .{s.branches});
+    try w.writeAll(" }");
 }
 
 pub fn buildSymbolIndexJson(allocator: std.mem.Allocator, index: *const types.SymbolIndex) ![]const u8 {
@@ -350,6 +372,168 @@ pub fn buildTodosJson(allocator: std.mem.Allocator, index: *const types.TodoInde
         try escapeJsonString(w, e.path);
         try w.print(", \"line\": {d}, \"text\": ", .{e.line});
         try escapeJsonString(w, e.text);
+        try w.writeAll(" }");
+    }
+    try w.writeAll("\n  ]\n}\n");
+    return aw.toOwnedSlice();
+}
+
+// ─── call_graph.json ─────────────────────────────────────────────────────────
+
+pub fn buildCallGraphJson(allocator: std.mem.Allocator, cg: *const types.CallGraph) ![]const u8 {
+    var aw = Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
+    try w.print("{{\n  \"indexedAt\": {d},\n  \"byCaller\": {{\n", .{cg.indexed_at});
+    var first = true;
+    var it = cg.entries.iterator();
+    while (it.next()) |e| {
+        if (!first) try w.writeAll(",\n");
+        first = false;
+        try w.writeAll("    ");
+        try escapeJsonString(w, e.key_ptr.*);
+        try w.writeAll(": [");
+        for (e.value_ptr.items, 0..) |c, j| {
+            if (j > 0) try w.writeAll(", ");
+            try escapeJsonString(w, c);
+        }
+        try w.writeAll("]");
+    }
+    try w.writeAll("\n  }\n}\n");
+    return aw.toOwnedSlice();
+}
+
+// ─── type_hierarchy.json ─────────────────────────────────────────────────────
+
+pub fn buildTypeHierarchyJson(allocator: std.mem.Allocator, th: *const types.TypeHierarchy) ![]const u8 {
+    var aw = Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
+    try w.print("{{\n  \"indexedAt\": {d},\n  \"nodes\": [\n", .{th.indexed_at});
+    for (th.nodes.items, 0..) |*n, i| {
+        if (i > 0) try w.writeAll(",\n");
+        try w.writeAll("    { \"name\": ");
+        try escapeJsonString(w, n.name);
+        try w.writeAll(", \"kind\": ");
+        try escapeJsonString(w, n.kind);
+        if (n.extends) |e| {
+            try w.writeAll(", \"extends\": ");
+            try escapeJsonString(w, e);
+        }
+        try w.writeAll(", \"implements\": [");
+        for (n.implements.items, 0..) |impl, j| {
+            if (j > 0) try w.writeAll(", ");
+            try escapeJsonString(w, impl);
+        }
+        try w.writeAll("], \"file\": ");
+        try escapeJsonString(w, n.file);
+        try w.print(", \"line\": {d} }}", .{n.line});
+    }
+    try w.writeAll("\n  ]\n}\n");
+    return aw.toOwnedSlice();
+}
+
+// ─── env_vars.json ───────────────────────────────────────────────────────────
+
+pub fn buildEnvVarIndexJson(allocator: std.mem.Allocator, ev: *const types.EnvVarIndex) ![]const u8 {
+    var aw = Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
+    try w.print("{{\n  \"indexedAt\": {d},\n  \"vars\": [", .{ev.indexed_at});
+    for (ev.vars.items, 0..) |v, i| {
+        if (i > 0) try w.writeAll(", ");
+        try escapeJsonString(w, v);
+    }
+    try w.writeAll("],\n  \"usages\": [\n");
+    for (ev.usages.items, 0..) |*u, i| {
+        if (i > 0) try w.writeAll(",\n");
+        try w.writeAll("    { \"name\": ");
+        try escapeJsonString(w, u.name);
+        try w.writeAll(", \"file\": ");
+        try escapeJsonString(w, u.file);
+        try w.print(", \"line\": {d} }}", .{u.line});
+    }
+    try w.writeAll("\n  ]\n}\n");
+    return aw.toOwnedSlice();
+}
+
+// ─── complexity.json ─────────────────────────────────────────────────────────
+
+pub fn buildComplexityIndexJson(allocator: std.mem.Allocator, ci: *const types.ComplexityIndex) ![]const u8 {
+    var aw = Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
+    try w.print("{{\n  \"indexedAt\": {d},\n  \"totalFunctions\": {d},\n  \"avgComplexity\": {d:.2},\n  \"functions\": [\n", .{
+        ci.indexed_at,
+        ci.total_functions,
+        ci.avg_complexity,
+    });
+    for (ci.functions.items, 0..) |*f, i| {
+        if (i > 0) try w.writeAll(",\n");
+        try w.writeAll("    { \"id\": ");
+        try escapeJsonString(w, f.symbol_id);
+        try w.writeAll(", \"name\": ");
+        try escapeJsonString(w, f.name);
+        try w.writeAll(", \"file\": ");
+        try escapeJsonString(w, f.file);
+        try w.writeAll(", \"kind\": ");
+        try escapeJsonString(w, f.kind);
+        try w.print(", \"line\": {d}, \"lines\": {d}, \"branches\": {d}, \"complexity\": {d} }}", .{
+            f.line, f.lines, f.branches, f.complexity,
+        });
+    }
+    try w.writeAll("\n  ]\n}\n");
+    return aw.toOwnedSlice();
+}
+
+// ─── dead_code.json ──────────────────────────────────────────────────────────
+
+pub fn buildDeadCodeJson(allocator: std.mem.Allocator, dc: *const types.DeadCode) ![]const u8 {
+    var aw = Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
+    try w.print("{{\n  \"indexedAt\": {d},\n  \"unusedExports\": [\n", .{dc.indexed_at});
+    for (dc.unused_exports.items, 0..) |*e, i| {
+        if (i > 0) try w.writeAll(",\n");
+        try w.writeAll("    { \"file\": ");
+        try escapeJsonString(w, e.file);
+        try w.writeAll(", \"symbol\": ");
+        try escapeJsonString(w, e.symbol);
+        try w.writeAll(", \"kind\": ");
+        try escapeJsonString(w, e.kind);
+        try w.print(", \"line\": {d} }}", .{e.line});
+    }
+    try w.writeAll("\n  ],\n  \"unreachableFiles\": [");
+    for (dc.unreachable_files.items, 0..) |f, i| {
+        if (i > 0) try w.writeAll(", ");
+        try escapeJsonString(w, f);
+    }
+    try w.writeAll("]\n}\n");
+    return aw.toOwnedSlice();
+}
+
+// ─── api_surface.json ────────────────────────────────────────────────────────
+
+pub fn buildApiSurfaceJson(allocator: std.mem.Allocator, api: *const types.ApiSurface) ![]const u8 {
+    var aw = Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
+    try w.print("{{\n  \"indexedAt\": {d},\n  \"count\": {d},\n  \"entries\": [\n", .{ api.indexed_at, api.count });
+    for (api.entries.items, 0..) |*e, i| {
+        if (i > 0) try w.writeAll(",\n");
+        try w.writeAll("    { \"file\": ");
+        try escapeJsonString(w, e.file);
+        try w.writeAll(", \"name\": ");
+        try escapeJsonString(w, e.name);
+        try w.writeAll(", \"kind\": ");
+        try escapeJsonString(w, e.kind);
+        try w.writeAll(", \"signature\": ");
+        try escapeJsonString(w, e.signature);
+        try w.print(", \"line\": {d}", .{e.line});
+        if (e.doc) |d| {
+            try w.writeAll(", \"doc\": ");
+            try escapeJsonString(w, d);
+        }
         try w.writeAll(" }");
     }
     try w.writeAll("\n  ]\n}\n");
