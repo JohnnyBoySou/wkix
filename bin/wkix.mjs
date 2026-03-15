@@ -105,6 +105,58 @@ This repository has a pre-generated codebase index in \`.workspace/\`.
 | \`.workspace/lint.json\` | Oxlint diagnostics grouped by file — errors, warnings, rule names and line numbers | Find lint errors without running the linter |
 | \`.workspace/graph.md\` | Mermaid import graph + exported symbol tables — visual map of file dependencies | Understand module structure at a glance |
 
+**File examples** (shape of each JSON so you know exactly what to query):
+
+\`symbols.json\` → find function by name:
+\`\`\`json
+{ "byName": { "createUser": [{ "name": "createUser", "kind": "function", "file": "src/users.ts", "line": 42, "exported": true, "params": ["email: string", "role: Role"], "returnType": "Promise<User>" }] } }
+\`\`\`
+
+\`import_graph.json\` → trace who imports a file:
+\`\`\`json
+{ "graph": { "src/users.ts": { "imports": ["src/db.ts", "src/types.ts"], "importedBy": ["src/routes/auth.ts"] } } }
+\`\`\`
+
+\`call_graph.json\` → see what a function calls:
+\`\`\`json
+{ "graph": { "src/users.ts::createUser": { "name": "createUser", "file": "src/users.ts", "line": 42, "calls": ["hashPassword", "sendWelcomeEmail", "db.insert"] } } }
+\`\`\`
+
+\`type_hierarchy.json\` → trace inheritance:
+\`\`\`json
+{ "classes": [{ "name": "AdminUser", "file": "src/models.ts", "line": 10, "extends": "BaseUser", "implements": ["ISerializable"] }] }
+\`\`\`
+
+\`complexity.json\` → find risky functions (sorted by complexity desc):
+\`\`\`json
+{ "functions": [{ "name": "processOrder", "file": "src/orders.ts", "line": 88, "complexity": 14, "branches": 13, "lineCount": 97 }] }
+\`\`\`
+
+\`dead_code.json\` → spot unused exports:
+\`\`\`json
+{ "unusedExports": [{ "name": "legacyFormat", "kind": "function", "file": "src/utils.ts", "line": 201 }], "orphanFiles": ["src/old-helpers.ts"] }
+\`\`\`
+
+\`api_surface.json\` → read public API without opening files:
+\`\`\`json
+{ "byFile": { "src/users.ts": [{ "name": "createUser", "kind": "function", "line": 42, "signature": "(email: string, role: Role): Promise<User>" }] } }
+\`\`\`
+
+\`env_vars.json\` → know all required env variables:
+\`\`\`json
+{ "unique": ["DATABASE_URL", "JWT_SECRET", "PORT"], "usages": [{ "variable": "DATABASE_URL", "file": "src/db.ts", "line": 3 }] }
+\`\`\`
+
+\`todos.json\` → find known issues:
+\`\`\`json
+{ "entries": [{ "kind": "TODO", "text": "add rate limiting", "file": "src/routes/auth.ts", "line": 55 }] }
+\`\`\`
+
+\`lint.json\` → check lint errors without running linter:
+\`\`\`json
+{ "byFile": { "src/users.ts": [{ "rule": "no-unused-vars", "severity": "error", "message": "'tmp' is declared but never used", "line": 12 }] } }
+\`\`\`
+
 **Current stats:** ${stats.fileCount} files · ${stats.symbolCount} symbols · ${stats.todoCount} TODOs
 
 **Recommended workflow:**
