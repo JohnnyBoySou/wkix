@@ -1,6 +1,6 @@
 {
   "name": "@myselfcoding/wkix",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Fast codebase indexer for AI agents — generates .workspace/*.json and updates CLAUDE.md/AGENTS.md",
   "type": "module",
   "bin": {
@@ -32,9 +32,9 @@
     "url": "https://github.com/JohnnyBoySou/wkix"
   },
   "optionalDependencies": {
-    "@myselfcoding/wkix-linux-x64": "0.1.4",
-    "@myselfcoding/wkix-darwin-arm64": "0.1.4",
-    "@myselfcoding/wkix-darwin-x64": "0.1.4",
-    "@myselfcoding/wkix-win32-x64": "0.1.4"
+    "@myselfcoding/wkix-linux-x64": "0.1.5",
+    "@myselfcoding/wkix-darwin-arm64": "0.1.5",
+    "@myselfcoding/wkix-darwin-x64": "0.1.5",
+    "@myselfcoding/wkix-win32-x64": "0.1.5"
   }
 }
