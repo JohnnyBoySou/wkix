@@ -1,3 +1,5 @@
+![WorKspace IndeXer](repo_bg.jpg)
+
 # WorKspace IndeXer (wkix)
 
 **Fast codebase indexer for LLMs.** Scans your repo in milliseconds, generates structured JSON files in `.workspace/`, and injects navigation instructions into `CLAUDE.md` / `AGENTS.md`.
