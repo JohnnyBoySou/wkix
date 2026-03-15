@@ -1,6 +1,6 @@
 {
   "name": "@myselfcoding/wkix-linux-x64",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "wkix binary for Linux x64",
   "os": [
     "linux"
