@@ -1,0 +1,124 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build (${{ matrix.pkg }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            pkg: wkix-linux-x64
+            target: x86_64-linux
+            bin: wkix
+
+          - os: macos-latest
+            pkg: wkix-darwin-x64
+            target: x86_64-macos
+            bin: wkix
+
+          - os: macos-14
+            pkg: wkix-darwin-arm64
+            target: aarch64-macos
+            bin: wkix
+
+          - os: windows-latest
+            pkg: wkix-win32-x64
+            target: x86_64-windows
+            bin: wkix.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: "0.14.0"
+
+      - name: Build binary
+        run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.pkg }}
+          path: zig-out/bin/${{ matrix.bin }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Set version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          npm version "$VERSION" --no-git-tag-version
+
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for pkg in wkix-linux-x64 wkix-darwin-x64 wkix-darwin-arm64 wkix-win32-x64; do
+            bindir="packages/$pkg/bin"
+            mkdir -p "$bindir"
+
+            # Copy binary (may be .exe on windows)
+            src="artifacts/$pkg"
+            if [ -f "$src/wkix.exe" ]; then
+              cp "$src/wkix.exe" "$bindir/wkix.exe"
+            else
+              cp "$src/wkix" "$bindir/wkix"
+              chmod +x "$bindir/wkix"
+            fi
+
+            # Bump version to match tag
+            node -e "
+              const fs = require('fs');
+              const p = 'packages/$pkg/package.json';
+              const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+              j.version = process.env.VERSION;
+              fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+            "
+
+            cd "packages/$pkg"
+            npm publish --access public
+            cd ../..
+          done
+
+      - name: Update optionalDependencies versions
+        run: |
+          node -e "
+            const fs = require('fs');
+            const p = 'package.json';
+            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+            for (const k of Object.keys(j.optionalDependencies)) {
+              j.optionalDependencies[k] = process.env.VERSION;
+            }
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          "
+
+      - name: Publish main package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

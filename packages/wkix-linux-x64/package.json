@@ -1,0 +1,13 @@
+{
+  "name": "@myselfcoding/wkix-linux-x64",
+  "version": "0.1.0",
+  "description": "wkix binary for Linux x64",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "files": ["bin/"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JohnnyBoySou/wkix"
+  }
+}

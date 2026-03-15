@@ -10,25 +10,62 @@
 
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(__dirname, "..");
-const zigWorkspaceDir = pkgRoot;
-const zigBin = path.join(zigWorkspaceDir, "zig-out", "bin", "wkix");
+
+// ─── Binary resolution ────────────────────────────────────────────────────────
+
+const PLATFORM_PACKAGES = {
+  "linux-x64":    "@myselfcoding/wkix-linux-x64",
+  "darwin-arm64": "@myselfcoding/wkix-darwin-arm64",
+  "darwin-x64":   "@myselfcoding/wkix-darwin-x64",
+  "win32-x64":    "@myselfcoding/wkix-win32-x64",
+};
+
+function resolveBinary() {
+  const key = `${process.platform}-${process.arch}`;
+  const pkgName = PLATFORM_PACKAGES[key];
+  const binName = process.platform === "win32" ? "wkix.exe" : "wkix";
+
+  // 1. Try platform-specific npm package (installed as optionalDependency)
+  if (pkgName) {
+    try {
+      const require = createRequire(import.meta.url);
+      const pkgDir = path.dirname(require.resolve(`${pkgName}/package.json`));
+      const bin = path.join(pkgDir, "bin", binName);
+      if (existsSync(bin)) return { bin, fallback: false };
+    } catch {}
+  }
+
+  // 2. Try local zig-out (dev / build-from-source)
+  const localBin = path.join(pkgRoot, "zig-out", "bin", binName);
+  if (existsSync(localBin)) return { bin: localBin, fallback: false };
+
+  // 3. Fallback: invoke via zig build run (requires Zig installed)
+  return { bin: null, fallback: true };
+}
 
 // ─── Indexer ──────────────────────────────────────────────────────────────────
 
 function runIndexer(targetDir, { force, quiet }) {
-  // Tenta usar o binário pré-compilado primeiro, fallback para zig build run
-  const hasBin = existsSync(zigBin);
-  const cmd = hasBin ? zigBin : "zig";
-  const args = hasBin
-    ? [targetDir, ...(force ? ["--force"] : []), ...(quiet ? ["--quiet"] : [])]
-    : ["build", "run", "--", targetDir, ...(force ? ["--force"] : []), ...(quiet ? ["--quiet"] : [])];
-  const cwd = hasBin ? undefined : zigWorkspaceDir;
+  const { bin, fallback } = resolveBinary();
+  const extraArgs = [...(force ? ["--force"] : []), ...(quiet ? ["--quiet"] : [])];
+
+  let cmd, args, cwd;
+  if (!fallback) {
+    cmd = bin;
+    args = [targetDir, ...extraArgs];
+    cwd = undefined;
+  } else {
+    if (!quiet) console.error("wkix: pre-compiled binary not found, falling back to `zig build run` (requires Zig ≥ 0.14)");
+    cmd = "zig";
+    args = ["build", "run", "--", targetDir, ...extraArgs];
+    cwd = pkgRoot;
+  }
 
   const result = spawnSync(cmd, args, { cwd, stdio: "inherit", shell: false });
 
@@ -59,28 +96,28 @@ function readWorkspaceStats(targetDir) {
 function buildWorkspaceSection(stats) {
   return `## Workspace Index
 
-Este repositório tem um índice de codebase pré-gerado em \`.workspace/\`.
-**Antes de explorar o código, consulte estes arquivos** — evita buscas cegas e acelera muito a navegação:
+This repository has a pre-generated codebase index in \`.workspace/\`.
+**Before exploring the code, check these files** — avoids blind search and speeds up navigation:
 
-| Arquivo | Conteúdo | Quando usar |
-|---------|----------|-------------|
-| \`.workspace/repo_map.json\` | Todos os arquivos com tamanho, linhas, nº de símbolos/exports/imports | Primeiro passo — descubra quais arquivos ler |
-| \`.workspace/symbols.json\` | Todas as funções, classes, tipos, enums — com linha exata, parâmetros e tipo de retorno. \`byName\` para busca rápida | Localize um símbolo pelo nome instantaneamente |
-| \`.workspace/import_graph.json\` | Grafo de imports com \`imports\` e \`importedBy\` por arquivo | Rastreie dependências nas duas direções |
-| \`.workspace/chunks.json\` | Código dividido em chunks lógicos com conteúdo real | Leia trechos sem abrir o arquivo inteiro |
-| \`.workspace/todos.json\` | Comentários TODO/FIXME/HACK com arquivo e linha | Encontre problemas conhecidos |
-| \`.workspace/repo_docs.json\` | Conteúdo do README e documentação | Visão geral do projeto |
-| \`.workspace/project_metadata.json\` | Nome do pacote, scripts, contagem de dependências | Configuração do projeto |
-| \`.workspace/test_map.json\` | Mapeamento arquivo-fonte → arquivo de teste | Encontre os testes de um módulo |
+| File | Contents | When to use |
+|------|----------|-------------|
+| \`.workspace/repo_map.json\` | All files with size, lines, symbol/export/import counts | First step — discover which files to read |
+| \`.workspace/symbols.json\` | All functions, classes, types, enums — with exact line, parameters and return type. \`byName\` for fast lookup | Locate a symbol by name instantly |
+| \`.workspace/import_graph.json\` | Import graph with \`imports\` and \`importedBy\` per file | Trace dependencies in both directions |
+| \`.workspace/chunks.json\` | Code split into logical chunks with actual content | Read snippets without opening the whole file |
+| \`.workspace/todos.json\` | TODO/FIXME/HACK comments with file and line | Find known issues |
+| \`.workspace/repo_docs.json\` | README and documentation content | Project overview |
+| \`.workspace/project_metadata.json\` | Package name, scripts, dependency counts | Project configuration |
+| \`.workspace/test_map.json\` | Source file → test file mapping | Find tests for a module |
 
-**Estatísticas atuais:** ${stats.fileCount} arquivos · ${stats.symbolCount} símbolos · ${stats.todoCount} TODOs
+**Current stats:** ${stats.fileCount} files · ${stats.symbolCount} symbols · ${stats.todoCount} TODOs
 
-**Workflow recomendado:**
-1. \`repo_map.json\` → identifique arquivos relevantes pelo tamanho e contagem de símbolos
-2. \`symbols.json\` → localize a função/classe pelo nome (use \`byName\`)
-3. Leia o arquivo real só se precisar de contexto completo
+**Recommended workflow:**
+1. \`repo_map.json\` → identify relevant files by size and symbol count
+2. \`symbols.json\` → locate the function/class by name (use \`byName\`)
+3. Read the actual file only if you need full context
 
-> Gerado por \`workspace generate\`. Atualize com \`npx workspace generate --force\` ou \`bunx workspace generate --force\`.
+> Generated by \`workspace generate\`. Update with \`npx workspace generate --force\` or \`bunx workspace generate --force\`.
 `;
 }
 
