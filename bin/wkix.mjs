@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createRequire } from "node:module";
