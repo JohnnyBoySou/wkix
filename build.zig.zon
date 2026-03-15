@@ -1,0 +1,7 @@
+.{
+    .name = .wkix,
+    .version = "0.1.0",
+    .fingerprint = 0x79cf4a18902cd864,
+    .paths = .{ "src/main.zig", "build.zig" },
+    .dependencies = .{},
+}

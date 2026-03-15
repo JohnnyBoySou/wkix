@@ -1,0 +1,17 @@
+# Zig build artifacts
+.zig-cache/
+zig-out/
+
+# Node
+node_modules/
+
+# Workspace index gerado
+.workspace/
+
+# Legado (não vai para o repo)
+zig-workspace/
+type-workspace/
+
+# Misc
+*.tmp
+CLAUDE.md
