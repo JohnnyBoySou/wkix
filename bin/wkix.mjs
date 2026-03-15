@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runLint } from "./oxlint.mjs";
+import { runGraph } from "./graph.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(__dirname, "..");
@@ -95,6 +96,7 @@ This repository has a pre-generated codebase index in \`.workspace/\`.
 | \`.workspace/project_metadata.json\` | Package name, scripts, dependency counts | Project configuration |
 | \`.workspace/test_map.json\` | Source file → test file mapping | Find tests for a module |
 | \`.workspace/lint.json\` | Oxlint diagnostics grouped by file — errors, warnings, rule names and line numbers | Find lint errors without running the linter |
+| \`.workspace/graph.md\` | Mermaid import graph + exported symbol tables — visual map of file dependencies | Understand module structure at a glance |
 
 **Current stats:** ${stats.fileCount} files · ${stats.symbolCount} symbols · ${stats.todoCount} TODOs
 
@@ -164,6 +166,7 @@ function main() {
     else if (arg === "--no-inject") noInject = true;
     else if (arg === "generate")    subcommand = "generate";
     else if (arg === "lint")        subcommand = "lint";
+    else if (arg === "graph")       subcommand = "graph";
     else if (!arg.startsWith("--")) repoRoot = arg;
   }
 
@@ -174,6 +177,24 @@ function main() {
       process.exitCode = runLint(targetDir, { quiet });
     } catch (err) {
       console.error(`wkix lint: ${err.message}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (subcommand === "graph") {
+    // pass remaining args through to runGraph
+    const graphArgs = argv.filter((a) => !["graph", repoRoot].includes(a));
+    let focusFile = null, depth = 1, noSymbols = false;
+    for (let i = 0; i < graphArgs.length; i++) {
+      if (graphArgs[i] === "--focus")      focusFile = graphArgs[++i];
+      else if (graphArgs[i] === "--depth") depth = parseInt(graphArgs[++i], 10) || 1;
+      else if (graphArgs[i] === "--no-symbols") noSymbols = true;
+    }
+    try {
+      runGraph(targetDir, { focusFile, depth, noSymbols, quiet });
+    } catch (err) {
+      console.error(`wkix graph: ${err.message}`);
       process.exitCode = 1;
     }
     return;
